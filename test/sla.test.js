@@ -139,3 +139,9 @@ test('marge tot 00:59:59 in de nacht na de werkdag', () => {
   assert.equal(at('2026-11-25 00:59:59'), STATUS.ON_TIME);
   assert.equal(at('2026-11-25 01:00:00'), STATUS.LATE);
 });
+
+test('minimizeComment: alleen tekst en tijdstip, HTML weg', async () => {
+  const { minimizeComment } = await import('../src/picqer.js');
+  const c = minimizeComment({ idcomment: 1, author: { full_name: 'Piet' }, body: '<p>Huisnummer&nbsp;mist<br>bel klant</p>', created: '2026-11-30 21:40:12' });
+  assert.deepEqual(c, { body: 'Huisnummer mist bel klant', created: '2026-11-30 21:40:12' });
+});

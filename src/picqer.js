@@ -55,6 +55,17 @@ export function minimizeShipment(s) {
   };
 }
 
+/** Houd van een comment alleen de tekst en het tijdstip over (geen auteur). */
+export function minimizeComment(c) {
+  const body = String(c.body ?? '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { body: body.length > 300 ? body.slice(0, 297) + '...' : body, created: c.created ?? null };
+}
+
 export class PicqerClient {
   /**
    * @param {object} opts
@@ -144,6 +155,15 @@ export class PicqerClient {
       if (rows.length < pageSize) return ids;
     }
     throw new PicqerError('Te veel backorders om op te halen.', { path: '/backorders' });
+  }
+
+  /** Comments bij een order (alleen tekst en tijdstip), oudste eerst. */
+  async getOrderComments(idorder) {
+    const rows = await this.get(`/orders/${encodeURIComponent(idorder)}/comments`);
+    return (Array.isArray(rows) ? rows : [])
+      .map(minimizeComment)
+      .filter((c) => c.body)
+      .sort((a, b) => String(a.created ?? '').localeCompare(String(b.created ?? '')));
   }
 
   async getPicklistShipments(idpicklist) {
