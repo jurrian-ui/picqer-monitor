@@ -1,4 +1,11 @@
 {
-  "_toelichting": "Sluitingsdagen van de distributiepartner (YYYY-MM-DD). Twee keer per jaar bijwerken met de kalender van de partner. Op deze dagen wordt niet verwerkt en telt de dag niet als werkdag.",
-  "closingDays": []
+  "_toelichting": "Sluitingsdagen van de distributiepartner (YYYY-MM-DD). Bron: PackFeed Feestdagenoverzicht 2026 (status 'Dicht'), aangeleverd door Jurrian op 25-11-2026. Alleen werkdagen zijn relevant; weekenddagen tellen al niet mee. Twee keer per jaar bijwerken.",
+  "closingDays": [
+    "2026-04-03",
+    "2026-04-06",
+    "2026-04-27",
+    "2026-05-05",
+    "2026-05-14",
+    "2026-05-25"
+  ]
 }
