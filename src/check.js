@@ -14,6 +14,7 @@ export async function loadState(store) {
     openOrders: s.openOrders ?? {},
     backorderSeen: s.backorderSeen ?? {},
     lastRun: s.lastRun ?? null,
+    pendingShipments: s.pendingShipments ?? [],
   };
 }
 
@@ -33,6 +34,7 @@ async function saveState(store, state) {
  * @param {boolean} [p.dryRun] true = niets opslaan (proefrun)
  */
 export async function runCheck({ client, store, config, closingDays, now, from, dryRun = false }) {
+  const startedAt = Date.now();
   const state = await loadState(store);
   const calendar = new WorkCalendar({ workingDays: config.workingDays, closingDays });
   const tz = config.timezone;
@@ -54,9 +56,9 @@ export async function runCheck({ client, store, config, closingDays, now, from, 
     const byId = new Map(orders.map((o) => [String(o.idorder), o]));
 
     // Eerder gemelde open orders opnieuw ophalen als ze buiten het venster vallen.
-    for (const id of Object.keys(state.openOrders)) {
-      if (!byId.has(id)) byId.set(id, await client.getOrder(id));
-    }
+    const refetch = Object.keys(state.openOrders).filter((id) => !byId.has(id));
+    const refetched = await mapLimit(refetch, 5, (id) => client.getOrder(id));
+    refetched.forEach((o, i) => byId.set(refetch[i], o));
 
     const results = [];
     for (const order of byId.values()) {
@@ -95,35 +97,51 @@ export async function runCheck({ client, store, config, closingDays, now, from, 
     }
 
     // Koppeling order - zending - vervoerder - trackingcode (voorbereiding vervoerdersperformance).
-    const parcelLinks = [];
-    const missingShipments = [];
-    let fetches = 0;
+    // Werkt met een wachtrij: wat niet binnen deze run past, wordt de volgende run opgehaald.
+    // Een fout bij zendinggegevens laat de SLA-controle niet mislukken; de picklijst blijft in de wachtrij.
+    const queue = new Map();
+    for (const item of state.pendingShipments) queue.set(String(item.idpicklist), item);
     const processed = [...inPeriod, ...changes].filter((r) => r.status === STATUS.ON_TIME || r.status === STATUS.LATE);
     for (const r of processed) {
       for (const p of byId.get(String(r.idorder))?.picklists ?? []) {
         if (p.status === 'cancelled') continue;
-        if (fetches >= config.maxShipmentFetchesPerRun) { missingShipments.push(r.orderid ?? r.idorder); break; }
-        fetches++;
-        const shipments = await client.getPicklistShipments(p.idpicklist);
+        queue.set(String(p.idpicklist), { idorder: r.idorder, orderid: r.orderid, reference: r.reference, idpicklist: p.idpicklist });
+      }
+    }
+    const cap = dryRun ? Math.min(20, config.maxShipmentFetchesPerRun) : config.maxShipmentFetchesPerRun;
+    const deadlineMs = startedAt + (config.shipmentTimeBudgetSeconds ?? 35) * 1000;
+    const items = [...queue.values()];
+    const todo = items.slice(0, cap);
+    const parcelLinks = [];
+    const done = new Set();
+    const shipmentErrors = [];
+    await mapLimit(todo, 5, async (item) => {
+      if (Date.now() > deadlineMs) return;
+      try {
+        const shipments = await client.getPicklistShipments(item.idpicklist);
         const active = shipments.filter((s) => !s.cancelled);
-        if (!active.length) parcelLinks.push({ idorder: r.idorder, orderid: r.orderid, reference: r.reference, idpicklist: p.idpicklist, note: 'Geen actieve zending gevonden.' });
-        for (const s of active) {
-          for (const parcel of s.parcels.length ? s.parcels : [{ tracking_code: null, tracking_url: null }]) {
+        if (!active.length) parcelLinks.push({ ...item, note: 'Geen actieve zending gevonden.' });
+        for (const sh of active) {
+          for (const parcel of sh.parcels.length ? sh.parcels : [{ tracking_code: null, tracking_url: null }]) {
             parcelLinks.push({
-              idorder: r.idorder, orderid: r.orderid, reference: r.reference,
-              idpicklist: p.idpicklist, idshipment: s.idshipment,
-              carrier: s.provider, carrier_key: s.carrier_key,
+              ...item, idshipment: sh.idshipment,
+              carrier: sh.provider, carrier_key: sh.carrier_key,
               tracking_code: parcel.tracking_code, tracking_url: parcel.tracking_url,
-              shipment_created: s.created,
+              shipment_created: sh.created,
             });
           }
         }
+        done.add(String(item.idpicklist));
+      } catch (e) {
+        shipmentErrors.push(`${item.orderid ?? item.idorder}: ${e.message}`);
       }
-    }
+    });
+    const pendingShipments = items.filter((i) => !done.has(String(i.idpicklist)));
+    const missingShipments = pendingShipments.map((i) => i.orderid ?? i.idorder);
 
     const report = buildReport({
       config, closingDays, tz, now, periodStart, lastSuccessfulCheck: state.lastSuccessfulCheck,
-      inPeriod, notDue, changes, stillOpen, missingShipments, requestCount: client.requestCount, dryRun,
+      inPeriod, notDue, changes, stillOpen, missingShipments, shipmentErrors, requestCount: client.requestCount, dryRun,
     });
 
     if (!dryRun) {
@@ -146,6 +164,7 @@ export async function runCheck({ client, store, config, closingDays, now, from, 
         lastSuccessfulCheck: now.toISOString(),
         openOrders,
         backorderSeen,
+        pendingShipments,
         lastRun: { at: now.toISOString(), ok: true },
       });
       for (const link of parcelLinks) {
@@ -177,7 +196,7 @@ function deviation(r) {
   };
 }
 
-export function buildReport({ config, closingDays, tz, now, periodStart, lastSuccessfulCheck, inPeriod, notDue, changes, stillOpen = [], missingShipments, requestCount, dryRun }) {
+export function buildReport({ config, closingDays, tz, now, periodStart, lastSuccessfulCheck, inPeriod, notDue, changes, stillOpen = [], missingShipments, shipmentErrors = [], requestCount, dryRun }) {
   const groups = {};
   for (const g of GROUPS) {
     groups[g] = { counts: Object.fromEntries(ALL_STATUSES.map((s) => [s, 0])), deviations: [] };
@@ -199,7 +218,8 @@ export function buildReport({ config, closingDays, tz, now, periodStart, lastSuc
   if (!closingDays.length) missingData.push('Er zijn nog geen sluitingsdagen ingesteld; alleen weekenden tellen als niet-werkdag.');
   for (const r of config.rules.filter((x) => !x.confirmed)) missingData.push(`Onbevestigde regel '${r.id}': ${r.text}`);
   if (config.picqerTimezone && !config.picqerTimezone.confirmed) missingData.push(`Tijdzone van Picqer-tijden aangenomen als ${config.picqerTimezone.value} (onbevestigd).`);
-  if (missingShipments.length) missingData.push(`Zendinggegevens (vervoerder/tracking) niet opgehaald voor ${missingShipments.length} order(s) door de limiet per run: ${missingShipments.join(', ')}.`);
+  if (missingShipments.length) missingData.push(`Zendinggegevens (vervoerder/tracking) nog niet opgehaald voor ${missingShipments.length} order(s); die volgen in een volgende run.`);
+  if (shipmentErrors.length) missingData.push(`Fout bij ophalen zendinggegevens (${shipmentErrors.length}x), blijft in de wachtrij: ${shipmentErrors.slice(0, 5).join('; ')}.`);
 
   return {
     mode: dryRun ? 'proefrun (niets opgeslagen)' : 'definitieve run',
@@ -255,4 +275,18 @@ export function renderMarkdown(result) {
     for (const m of r.missingData) lines.push(`- ${m}`);
   }
   return lines.join('\n');
+}
+
+/** Voer fn uit over items met maximaal `limit` tegelijk; behoudt de volgorde van de resultaten. */
+export async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }

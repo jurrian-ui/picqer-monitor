@@ -64,7 +64,7 @@ export class PicqerClient {
    * @param {typeof fetch} [opts.fetch]
    * @param {number} [opts.maxRequests] veiligheidsgrens voor het aantal verzoeken per run
    */
-  constructor({ baseUrl, apiKey, userAgent, fetch: fetchImpl, maxRequests = 400, retries = 3, sleep }) {
+  constructor({ baseUrl, apiKey, userAgent, fetch: fetchImpl, maxRequests = 400, retries = 3, sleep, minIntervalMs = 150 }) {
     if (!baseUrl || !apiKey) throw new PicqerError('Picqer-configuratie ontbreekt (PICQER_BASE_URL of PICQER_API_KEY).');
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.auth = 'Basic ' + btoa(`${apiKey}:`);
@@ -74,6 +74,16 @@ export class PicqerClient {
     this.retries = retries;
     this.sleep = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.requestCount = 0;
+    // Picqer staat ~500 verzoeken per minuut toe; we blijven daar ruim onder.
+    this.minIntervalMs = minIntervalMs;
+    this.nextSlot = 0;
+  }
+
+  async throttle() {
+    const now = Date.now();
+    const slot = Math.max(now, this.nextSlot);
+    this.nextSlot = slot + this.minIntervalMs;
+    if (slot > now) await this.sleep(slot - now);
   }
 
   async get(path, params = {}) {
@@ -84,6 +94,7 @@ export class PicqerClient {
         throw new PicqerError(`Maximaal aantal API-verzoeken per run (${this.maxRequests}) bereikt; gegevens onvolledig.`, { path });
       }
       this.requestCount++;
+      await this.throttle();
       let res;
       try {
         res = await this.fetch(url.toString(), {

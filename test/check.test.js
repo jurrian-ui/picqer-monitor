@@ -84,8 +84,8 @@ test('mislukte API-run verschuift het controletijdstip niet en wordt ingehaald',
   assert.equal(s.lastSuccessfulCheck, start);
   assert.equal(s.lastRun.ok, false);
 
-  // Ook een fout halverwege (zendingen) telt als mislukt.
-  const failed2 = await runCheck({ ...base, client: new FakeClient({ orders, failOn: 'shipments' }), store, now: ams('2026-12-01 10:00:00') });
+  // Ook een fout bij de backorders telt als mislukt.
+  const failed2 = await runCheck({ ...base, client: new FakeClient({ orders, failOn: 'backorders' }), store, now: ams('2026-12-01 10:00:00') });
   assert.equal(failed2.ok, false);
   assert.equal((await loadState(store)).lastSuccessfulCheck, start);
 
@@ -115,4 +115,31 @@ test('backorder: wacht op voorraad, daarna onvoldoende gegevens', async () => {
   assert.equal((await loadState(store)).backorderSeen['8'], undefined, 'daarna niet meer gevolgd');
   const r3 = await runCheck({ ...base, client: new FakeClient({ orders: [done] }), store, now: ams('2026-12-04 09:00:00') });
   assert.equal(r3.report.groups.NL.counts[STATUS.INSUFFICIENT], 0, 'niet dubbel geteld');
+});
+
+test('zendinggegevens: fout of limiet → wachtrij voor de volgende run, SLA-controle slaagt', async () => {
+  const store = new MemoryStore();
+  await store.put('state:v1', JSON.stringify({ lastSuccessfulCheck: ams('2026-11-30 09:00:00').toISOString() }));
+  const orders = [1, 2, 3].map((i) => order({ idorder: i, country: 'NL', created: '2026-11-30 11:00:00', status: 'completed', picklists: [closedPicklist('2026-11-30 16:00:00', 100 + i)] }));
+  const r1 = await runCheck({ ...base, config: { ...config, maxShipmentFetchesPerRun: 2 }, client: new FakeClient({ orders, failOn: 'shipments' }), store, now: ams('2026-12-01 09:00:00') });
+  assert.equal(r1.ok, true);
+  assert.equal(r1.report.groups.NL.counts[STATUS.ON_TIME], 3);
+  assert.ok(r1.report.missingData.some((m) => /Fout bij ophalen zendinggegevens/.test(m)));
+  assert.equal((await loadState(store)).pendingShipments.length, 3);
+  const shipments = Object.fromEntries([101, 102, 103].map((id) => [id, [{ idshipment: id, provider: 'DHL', carrier_key: 'dhl', created: 'x', cancelled: false, parcels: [{ tracking_code: `T${id}`, tracking_url: null }] }]]));
+  const r2 = await runCheck({ ...base, config: { ...config, maxShipmentFetchesPerRun: 2 }, client: new FakeClient({ orders, shipments }), store, now: ams('2026-12-02 09:00:00') });
+  assert.equal(r2.parcelLinks.length, 2);
+  assert.equal((await loadState(store)).pendingShipments.length, 1);
+  const r3 = await runCheck({ ...base, config: { ...config, maxShipmentFetchesPerRun: 2 }, client: new FakeClient({ orders, shipments }), store, now: ams('2026-12-03 09:00:00') });
+  assert.equal(r3.parcelLinks.length, 1);
+  assert.equal((await loadState(store)).pendingShipments.length, 0);
+});
+
+test('Picqer-client houdt minimaal interval tussen verzoeken aan', async () => {
+  const { PicqerClient } = await import('../src/picqer.js');
+  const waits = [];
+  const c = new PicqerClient({ baseUrl: 'https://e/api/v1', apiKey: 'K', userAgent: 'UA', minIntervalMs: 150, sleep: async (ms) => { waits.push(ms); }, fetch: async () => new Response('[]', { status: 200 }) });
+  await Promise.all([c.get('/a'), c.get('/b'), c.get('/c')]);
+  assert.equal(waits.length, 2);
+  assert.ok(waits[1] >= 290);
 });

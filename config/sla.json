@@ -83,6 +83,7 @@
     }
   ],
   "lookbackDays": 6,
-  "maxShipmentFetchesPerRun": 400,
-  "deadlineDayOffset": 1
+  "maxShipmentFetchesPerRun": 150,
+  "deadlineDayOffset": 1,
+  "shipmentTimeBudgetSeconds": 35
 }

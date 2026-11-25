@@ -79,7 +79,7 @@ export async function callTool(name, args, deps) {
         const open = backorders.has(o.idorder);
         const evaluation = evaluateOrder(o, { config, calendar, now, backorder: { open, seenBefore: Boolean(state.backorderSeen[String(o.idorder)]) && !open } });
         const shipments = [];
-        for (const p of o.picklists) shipments.push(...await client.getPicklistShipments(p.idpicklist));
+        for (const p of o.picklists.slice(0, 5)) shipments.push(...await client.getPicklistShipments(p.idpicklist));
         out.push({ rawTimestamps: { order_created: o.created, order_updated: o.updated, picklists: o.picklists }, evaluation, shipments });
       }
       return text(out);
