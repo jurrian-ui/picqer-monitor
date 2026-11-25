@@ -6,7 +6,7 @@ workers_dev = true
 # Niet-geheime instellingen.
 [vars]
 PICQER_USER_AGENT = "PackFeedCutoffMonitor (https://github.com/jurrian-ui/picqer-monitor)"  # Picqer vraagt naam + website of e-mail
-MAX_API_REQUESTS = "45"  # gratis Workers-abonnement: max. 50 externe verzoeken per aanroep
+MAX_API_REQUESTS = "900"  # Workers Paid: max. 1000 externe verzoeken per aanroep
 
 # Opslag voor het controletijdstip, open orders en zendingkoppelingen.
 [[kv_namespaces]]
@@ -22,7 +22,7 @@ id = "74c76ab3c7184986962159694f3cdd5f"  # picqer-monitor-state
 # dus de connector-URL werkt daar niet; ze dienen alleen als bouwcontrole.
 [previews.vars]
 PICQER_USER_AGENT = "PackFeedCutoffMonitor (https://github.com/jurrian-ui/picqer-monitor)"
-MAX_API_REQUESTS = "45"
+MAX_API_REQUESTS = "900"
 
 [[previews.kv_namespaces]]
 binding = "STATE"

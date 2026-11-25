@@ -3,30 +3,86 @@
   "timezone": "Europe/Amsterdam",
   "picqerTimezone": {
     "value": "Europe/Amsterdam",
-    "confirmed": false,
-    "note": "Picqer-tijden hebben geen tijdzone. Controleren met een bekende voorbeeldorder."
+    "confirmed": true,
+    "note": "Bevestigd 25-11-2026 met echte orders: Picqer-tijden staan in Nederlandse tijd."
   },
-  "workingDays": [1, 2, 3, 4, 5],
+  "workingDays": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
   "cutoffs": {
     "NL": "23:59",
     "BE": "22:59",
     "OVERIG": "20:59"
   },
   "cutoffMinuteInclusive": true,
-  "deadlineTime": "23:59:59",
+  "deadlineTime": "00:59:59",
   "rules": [
-    { "id": "start", "text": "Startmoment = ontvangst in Picqer (order.created).", "confirmed": true },
-    { "id": "voor-cutoff", "text": "Ontvangen op een werkdag vóór of in de cut-offminuut: uiterlijk dezelfde werkdag 23:59:59 verwerkt.", "confirmed": true },
-    { "id": "na-cutoff", "text": "Ontvangen na de cut-off: uiterlijk de volgende werkdag 23:59:59 verwerkt.", "confirmed": true },
-    { "id": "weekend-sluiting", "text": "Ontvangen in het weekend of op een sluitingsdag: telt als ontvangen vóór de cut-off op de eerstvolgende werkdag.", "confirmed": true },
-    { "id": "verwerkt", "text": "Verwerkt = order heeft status 'Processed' in Picqer. Gemeten via het moment dat de laatste (niet-geannuleerde) picklijst is gesloten (closed_at). Gerapporteerd als 'geregistreerd in Picqer'.", "confirmed": false },
-    { "id": "deelzendingen", "text": "Geen deelzendingen: de hele order moet verwerkt zijn.", "confirmed": true },
-    { "id": "annulering", "text": "Geannuleerde orders vallen buiten scope.", "confirmed": true },
-    { "id": "backorder", "text": "Bij een backorder start de klok wanneer er weer voorraad is. Is dat moment niet zichtbaar in de API, dan 'onvoldoende gegevens'. Orders die nog op voorraad wachten vallen buiten scope.", "confirmed": true },
-    { "id": "concept", "text": "Conceptorders (status 'concept') vallen buiten scope tot ze worden ingediend.", "confirmed": false },
-    { "id": "expected", "text": "Orders met Picqer-status 'expected' vallen buiten scope tot ze worden vrijgegeven.", "confirmed": false },
-    { "id": "gepauzeerd", "text": "Gepauzeerde orders tellen gewoon mee; de klok loopt door.", "confirmed": false }
+    {
+      "id": "start",
+      "text": "Startmoment = ontvangst in Picqer (order.created).",
+      "confirmed": true
+    },
+    {
+      "id": "voor-cutoff",
+      "text": "Ontvangen op een werkdag vóór of in de cut-offminuut: verwerkt uiterlijk 00:59:59 in de nacht na die werkdag.",
+      "confirmed": true
+    },
+    {
+      "id": "na-cutoff",
+      "text": "Ontvangen na de cut-off: verwerkt uiterlijk 00:59:59 in de nacht na de volgende werkdag.",
+      "confirmed": true
+    },
+    {
+      "id": "marge-nacht",
+      "text": "Verwerking tot en met 00:59:59 na de werkdag telt als op tijd (bevestigd door Jurrian op 25-11-2026).",
+      "confirmed": true
+    },
+    {
+      "id": "weekend-sluiting",
+      "text": "Ontvangen in het weekend of op een sluitingsdag: telt als ontvangen vóór de cut-off op de eerstvolgende werkdag.",
+      "confirmed": true
+    },
+    {
+      "id": "verwerkt",
+      "text": "Verwerkt = order heeft status 'Processed' in Picqer. Gemeten via het moment dat de laatste (niet-geannuleerde) picklijst is gesloten (closed_at). Gerapporteerd als 'geregistreerd in Picqer'. Bevestigd 25-11-2026: closed_at valt samen met het aanmaken van de T&T-zending (±1 s).",
+      "confirmed": true
+    },
+    {
+      "id": "deelzendingen",
+      "text": "Geen deelzendingen: de hele order moet verwerkt zijn.",
+      "confirmed": true
+    },
+    {
+      "id": "annulering",
+      "text": "Geannuleerde orders vallen buiten scope.",
+      "confirmed": true
+    },
+    {
+      "id": "backorder",
+      "text": "Bij een backorder start de klok wanneer er weer voorraad is. Is dat moment niet zichtbaar in de API, dan 'onvoldoende gegevens'. Orders die nog op voorraad wachten vallen buiten scope.",
+      "confirmed": true
+    },
+    {
+      "id": "concept",
+      "text": "Conceptorders (status 'concept') vallen buiten scope tot ze worden ingediend.",
+      "confirmed": false
+    },
+    {
+      "id": "expected",
+      "text": "Orders met Picqer-status 'expected' vallen buiten scope tot ze worden vrijgegeven.",
+      "confirmed": false
+    },
+    {
+      "id": "gepauzeerd",
+      "text": "Gepauzeerde orders tellen gewoon mee; de klok loopt door.",
+      "confirmed": false
+    }
   ],
-  "lookbackDays": 10,
-  "maxShipmentFetchesPerRun": 30
+  "lookbackDays": 6,
+  "maxShipmentFetchesPerRun": 400,
+  "deadlineDayOffset": 1
 }

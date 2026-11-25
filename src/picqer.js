@@ -25,6 +25,20 @@ export function minimizeOrder(o) {
   return out;
 }
 
+/** Verwijder persoonsgegevens (zoals postcode) uit een tracking-URL. */
+export function stripTrackingUrl(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    for (const k of [...u.searchParams.keys()]) {
+      if (/^(pc|postcode|postal_?code|zip|zipcode|plz|lc|country)$/i.test(k)) u.searchParams.delete(k);
+    }
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function minimizeShipment(s) {
   return {
     idshipment: s.idshipment ?? null,
@@ -36,7 +50,7 @@ export function minimizeShipment(s) {
     cancelled: Boolean(s.cancelled),
     parcels: (s.parcels ?? []).map((p) => ({
       tracking_code: p.tracking_code ?? null,
-      tracking_url: p.tracking_url ?? null,
+      tracking_url: stripTrackingUrl(p.tracking_url),
     })),
   };
 }
