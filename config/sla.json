@@ -19,7 +19,7 @@
     "OVERIG": "20:59"
   },
   "cutoffMinuteInclusive": true,
-  "deadlineTime": "23:59:59",
+  "deadlineTime": "00:59:59",
   "rules": [
     {
       "id": "start",
@@ -28,12 +28,17 @@
     },
     {
       "id": "voor-cutoff",
-      "text": "Ontvangen op een werkdag vóór of in de cut-offminuut: uiterlijk dezelfde werkdag 23:59:59 verwerkt.",
+      "text": "Ontvangen op een werkdag vóór of in de cut-offminuut: verwerkt uiterlijk 00:59:59 in de nacht na die werkdag.",
       "confirmed": true
     },
     {
       "id": "na-cutoff",
-      "text": "Ontvangen na de cut-off: uiterlijk de volgende werkdag 23:59:59 verwerkt.",
+      "text": "Ontvangen na de cut-off: verwerkt uiterlijk 00:59:59 in de nacht na de volgende werkdag.",
+      "confirmed": true
+    },
+    {
+      "id": "marge-nacht",
+      "text": "Verwerking tot en met 00:59:59 na de werkdag telt als op tijd (bevestigd door Jurrian op 25-11-2026).",
       "confirmed": true
     },
     {
@@ -78,5 +83,6 @@
     }
   ],
   "lookbackDays": 6,
-  "maxShipmentFetchesPerRun": 30
+  "maxShipmentFetchesPerRun": 400,
+  "deadlineDayOffset": 1
 }

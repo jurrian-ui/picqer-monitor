@@ -18,8 +18,8 @@ Staan in [`config/sla.json`](config/sla.json). Samengevat (bevestigd 25-11-2026)
 |---|---|
 | Cut-off (werkdagen, Europe/Amsterdam) | NL 23:59, BE 22:59, overige landen 20:59. De hele cut-offminuut telt mee. |
 | Startmoment | Ontvangst in Picqer (`order.created`) |
-| Vóór cut-off | Dezelfde werkdag uiterlijk 23:59:59 verwerkt |
-| Na cut-off | Volgende werkdag uiterlijk 23:59:59 verwerkt |
+| Vóór cut-off | Verwerkt uiterlijk 00:59:59 in de nacht na die werkdag |
+| Na cut-off | Verwerkt uiterlijk 00:59:59 in de nacht na de volgende werkdag |
 | Weekend / sluitingsdag | Telt als ontvangen vóór de cut-off op de eerstvolgende werkdag |
 | Verwerkt | Status 'Processed'. Gemeten als het moment dat de laatste picklijst is gesloten (`closed_at`), gerapporteerd als *geregistreerd in Picqer* (**nog te bevestigen in de steekproef**) |
 | Deelzendingen | Komen niet voor; de hele order moet verwerkt zijn |
@@ -65,9 +65,8 @@ controletijdstip staan, zodat de volgende succesvolle run de periode inhaalt.
 
 ## Limieten
 
-Het gratis Workers-abonnement staat maximaal 50 externe verzoeken en 10 ms rekentijd per aanroep toe.
-`MAX_API_REQUESTS` staat daarom op 45. Is het ordervolume te groot, dan meldt de run dat als mislukt
-(gegevens onvolledig) en is het betaalde Workers-abonnement nodig; zet `MAX_API_REQUESTS` dan hoger.
+De Worker draait op het betaalde Workers-abonnement (max. 1000 externe verzoeken per aanroep).
+`MAX_API_REQUESTS` staat op 900. Wordt die grens bereikt, dan telt de run als mislukt (gegevens onvolledig).
 
 ## Ontwikkelen
 

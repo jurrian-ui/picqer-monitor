@@ -1,5 +1,5 @@
 // Vaste rekenregels voor de cut-offbelofte per order.
-import { localParts, zonedToUtc, parsePicqerDateTime, formatLocal } from './time.js';
+import { localParts, zonedToUtc, parsePicqerDateTime, formatLocal, addDays } from './time.js';
 
 export const STATUS = Object.freeze({
   ON_TIME: 'op tijd',
@@ -67,7 +67,8 @@ export function computeDeadline(received, group, config, calendar) {
     rule = 'weekend-sluiting';
   }
 
-  const [y, m, d] = deadlineDay.split('-').map(Number);
+  const deadlineDate = addDays(deadlineDay, config.deadlineDayOffset ?? 0);
+  const [y, m, d] = deadlineDate.split('-').map(Number);
   const deadline = zonedToUtc({ year: y, month: m, day: d, ...dl, ms: 999 }, tz);
   const [cy, cm, cd] = cutoffDay.split('-').map(Number);
   const cutoff = zonedToUtc({ year: cy, month: cm, day: cd, ...cutoffEnd }, tz);
