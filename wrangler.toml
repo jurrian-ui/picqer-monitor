@@ -9,11 +9,21 @@ PICQER_USER_AGENT = "PackFeedCutoffMonitor (https://github.com/jurrian-ui/picqer
 MAX_API_REQUESTS = "45"  # gratis Workers-abonnement: max. 50 externe verzoeken per aanroep
 
 # Opslag voor het controletijdstip, open orders en zendingkoppelingen.
-# Wrangler maakt deze KV-namespace automatisch aan bij de eerste deploy.
 [[kv_namespaces]]
 binding = "STATE"
+id = "74c76ab3c7184986962159694f3cdd5f"  # picqer-monitor-state
 
 # Geheimen (NIET hier invullen, maar in Cloudflare instellen):
 #   PICQER_BASE_URL - https://<account>.picqer.com/api/v1 van de partner
 #   PICQER_API_KEY  - de API-sleutel van de Picqer Fulfilment API
 #   MCP_PATH_TOKEN  - lange willekeurige reeks (minimaal 32 tekens) die in de connector-URL staat
+
+# Previewbuilds (voor andere branches dan main). Previews hebben geen geheimen,
+# dus de connector-URL werkt daar niet; ze dienen alleen als bouwcontrole.
+[previews.vars]
+PICQER_USER_AGENT = "PackFeedCutoffMonitor (https://github.com/jurrian-ui/picqer-monitor)"
+MAX_API_REQUESTS = "45"
+
+[[previews.kv_namespaces]]
+binding = "STATE"
+id = "74c76ab3c7184986962159694f3cdd5f"

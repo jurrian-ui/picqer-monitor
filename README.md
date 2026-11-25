@@ -54,7 +54,7 @@ controletijdstip staan, zodat de volgende succesvolle run de periode inhaalt.
 
 1. **Cloudflare koppelen aan GitHub**: Worker `picqer-monitor` → *Settings* → *Build* → *Connect* →
    GitHub, repository `picqer-monitor`, branch `main`. Elke wijziging op `main` wordt automatisch gepubliceerd.
-   De opslag (KV) wordt bij de eerste build automatisch aangemaakt.
+   De opslag staat in KV-namespace `picqer-monitor-state` (id in `wrangler.toml`).
 2. **Geheimen instellen**: Worker → *Settings* → *Variables and Secrets* → *Add*, type **Secret**:
    - `PICQER_BASE_URL`: `https://<account>.picqer.com/api/v1` (het Picqer-account van de partner)
    - `PICQER_API_KEY`: de Fulfilment API-sleutel
