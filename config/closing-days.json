@@ -1,11 +1,13 @@
 {
-  "_toelichting": "Sluitingsdagen van de distributiepartner (YYYY-MM-DD). Bron: PackFeed Feestdagenoverzicht 2026 (status 'Dicht'), aangeleverd door Jurrian op 25-11-2026. Alleen werkdagen zijn relevant; weekenddagen tellen al niet mee. Twee keer per jaar bijwerken.",
+  "_toelichting": "Sluitingsdagen van de distributiepartner (YYYY-MM-DD). Bron: PackFeed Feestdagenoverzicht 2026 (status 'Dicht'), aangeleverd door Jurrian op 25-11-2026. Alleen werkdagen zijn relevant; weekenddagen tellen al niet mee. Twee keer per jaar bijwerken. Kerst (25-12, 26-12 valt op zaterdag) en Nieuwjaar (01-01-2027) toegevoegd op verzoek van Jurrian, 25-11-2026.",
   "closingDays": [
     "2026-04-03",
     "2026-04-06",
     "2026-04-27",
     "2026-05-05",
     "2026-05-14",
-    "2026-05-25"
+    "2026-05-25",
+    "2026-12-25",
+    "2027-01-01"
   ]
 }
