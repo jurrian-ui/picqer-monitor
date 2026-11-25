@@ -143,3 +143,39 @@ test('Picqer-client houdt minimaal interval tussen verzoeken aan', async () => {
   assert.equal(waits.length, 2);
   assert.ok(waits[1] >= 290);
 });
+
+test('comments uit Picqer staan bij te late en open orders, status blijft gelijk', async () => {
+  const store = new MemoryStore();
+  await store.put('state:v1', JSON.stringify({ lastSuccessfulCheck: ams('2026-11-27 09:00:00').toISOString() }));
+  const client = new FakeClient({
+    orders: [
+      order({ idorder: 1, country: 'NL', created: '2026-11-27 14:00:00', status: 'completed', picklists: [closedPicklist('2026-11-27 18:00:00', 101)] }),
+      order({ idorder: 2, country: 'BE', created: '2026-11-27 23:10:00', status: 'completed', picklists: [closedPicklist('2026-12-01 08:00:00', 102)] }),
+      order({ idorder: 3, country: 'FR', created: '2026-11-27 12:00:00', status: 'processing', picklists: [openPicklist(103)] }),
+    ],
+    comments: {
+      1: [{ body: 'mag niet getoond worden', created: '2026-11-27 15:00:00' }],
+      2: [{ body: 'Huisnummer mist | adres niet compleet', created: '2026-11-30 21:40:12' }],
+    },
+  });
+  const r = await runCheck({ ...base, client, store, now: ams('2026-12-01 09:00:00') });
+  const be = r.report.groups.BE.deviations[0];
+  assert.equal(be.status, STATUS.LATE);
+  assert.equal(be.comments[0].body, 'Huisnummer mist | adres niet compleet');
+  assert.deepEqual(r.report.groups.OVERIG.deviations[0].comments, []);
+  const md = renderMarkdown(r);
+  assert.match(md, /Huisnummer mist \/ adres niet compleet \(geplaatst 30-11 21:40\)/);
+  assert.doesNotMatch(md, /mag niet getoond/);
+});
+
+test('fout bij comments laat de controle niet mislukken', async () => {
+  const store = new MemoryStore();
+  await store.put('state:v1', JSON.stringify({ lastSuccessfulCheck: ams('2026-11-27 09:00:00').toISOString() }));
+  const client = new FakeClient({ failOn: 'comments', orders: [
+    order({ idorder: 3, country: 'FR', created: '2026-11-27 12:00:00', status: 'processing', picklists: [openPicklist(103)] }),
+  ] });
+  const r = await runCheck({ ...base, client, store, now: ams('2026-12-01 09:00:00') });
+  assert.equal(r.ok, true);
+  assert.ok(r.report.missingData.some((m) => /Comments uit Picqer konden niet/.test(m)));
+  assert.equal((await loadState(store)).lastSuccessfulCheck, ams('2026-12-01 09:00:00').toISOString());
+});

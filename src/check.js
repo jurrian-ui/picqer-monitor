@@ -96,6 +96,24 @@ export async function runCheck({ client, store, config, closingDays, now, from, 
       }
     }
 
+    // Comments uit Picqer bij te late en open orders (mogelijke geldige reden). Alleen tonen; de status verandert niet.
+    // Een fout hierbij laat de controle niet mislukken.
+    const needComments = [...inPeriod, ...changes, ...stillOpen].filter((r) => r.status === STATUS.LATE || r.status === STATUS.OPEN_OVERDUE);
+    const commentCap = config.maxCommentFetchesPerRun ?? 100;
+    const commentErrors = [];
+    const commentsSkipped = [];
+    await mapLimit(needComments, 5, async (r, i) => {
+      if (i >= commentCap || Date.now() > startedAt + (config.commentTimeBudgetSeconds ?? 15) * 1000) {
+        commentsSkipped.push(r.orderid ?? r.idorder);
+        return;
+      }
+      try {
+        r.comments = await client.getOrderComments(r.idorder);
+      } catch (e) {
+        commentErrors.push(`${r.orderid ?? r.idorder}: ${e.message}`);
+      }
+    });
+
     // Koppeling order - zending - vervoerder - trackingcode (voorbereiding vervoerdersperformance).
     // Werkt met een wachtrij: wat niet binnen deze run past, wordt de volgende run opgehaald.
     // Een fout bij zendinggegevens laat de SLA-controle niet mislukken; de picklijst blijft in de wachtrij.
@@ -141,7 +159,7 @@ export async function runCheck({ client, store, config, closingDays, now, from, 
 
     const report = buildReport({
       config, closingDays, tz, now, periodStart, lastSuccessfulCheck: state.lastSuccessfulCheck,
-      inPeriod, notDue, changes, stillOpen, missingShipments, shipmentErrors, requestCount: client.requestCount, dryRun,
+      inPeriod, notDue, changes, stillOpen, missingShipments, shipmentErrors, commentErrors, commentsSkipped, requestCount: client.requestCount, dryRun,
     });
 
     if (!dryRun) {
@@ -193,10 +211,11 @@ function deviation(r) {
     measuredOrStatus: r.measured ? `${r.measured} (geregistreerd in Picqer)` : `Picqer-status: ${r.picqerStatus}`,
     status: r.status, reason: r.reason, rule: r.rule ?? null,
     ...(r.previousStatus ? { previousStatus: r.previousStatus } : {}),
+    ...(r.comments ? { comments: r.comments } : {}),
   };
 }
 
-export function buildReport({ config, closingDays, tz, now, periodStart, lastSuccessfulCheck, inPeriod, notDue, changes, stillOpen = [], missingShipments, shipmentErrors = [], requestCount, dryRun }) {
+export function buildReport({ config, closingDays, tz, now, periodStart, lastSuccessfulCheck, inPeriod, notDue, changes, stillOpen = [], missingShipments, shipmentErrors = [], commentErrors = [], commentsSkipped = [], requestCount, dryRun }) {
   const groups = {};
   for (const g of GROUPS) {
     groups[g] = { counts: Object.fromEntries(ALL_STATUSES.map((s) => [s, 0])), deviations: [] };
@@ -219,6 +238,8 @@ export function buildReport({ config, closingDays, tz, now, periodStart, lastSuc
   for (const r of config.rules.filter((x) => !x.confirmed)) missingData.push(`Onbevestigde regel '${r.id}': ${r.text}`);
   if (config.picqerTimezone && !config.picqerTimezone.confirmed) missingData.push(`Tijdzone van Picqer-tijden aangenomen als ${config.picqerTimezone.value} (onbevestigd).`);
   if (missingShipments.length) missingData.push(`Zendinggegevens (vervoerder/tracking) nog niet opgehaald voor ${missingShipments.length} order(s); die volgen in een volgende run.`);
+  if (commentErrors.length) missingData.push(`Comments uit Picqer konden niet worden opgehaald (${commentErrors.length}x): ${commentErrors.slice(0, 5).join('; ')}.`);
+  if (commentsSkipped.length) missingData.push(`Comments niet opgehaald voor ${commentsSkipped.length} order(s) (tijd- of aantalgrens bereikt).`);
   if (shipmentErrors.length) missingData.push(`Fout bij ophalen zendinggegevens (${shipmentErrors.length}x), blijft in de wachtrij: ${shipmentErrors.slice(0, 5).join('; ')}.`);
 
   return {
@@ -252,22 +273,22 @@ export function renderMarkdown(result) {
     for (const [s, n] of Object.entries(d.counts)) lines.push(`| ${s} | ${n} |`);
     if (d.deviations.length) {
       lines.push('');
-      lines.push('| Order | Referentie | Ontvangen | Deadline | Gemeten / status | Uitkomst | Reden |');
-      lines.push('|---|---|---|---|---|---|---|');
+      lines.push('| Order | Referentie | Ontvangen | Deadline | Gemeten / status | Uitkomst | Reden | Comment in Picqer |');
+      lines.push('|---|---|---|---|---|---|---|---|');
       for (const x of d.deviations) {
-        lines.push(`| ${x.orderid ?? ''} | ${x.reference ?? ''} | ${x.received ?? ''} | ${x.deadline ?? ''} | ${x.measuredOrStatus} | ${x.status} | ${x.reason} |`);
+        lines.push(`| ${x.orderid ?? ''} | ${x.reference ?? ''} | ${x.received ?? ''} | ${x.deadline ?? ''} | ${x.measuredOrStatus} | ${x.status} | ${x.reason} | ${formatComments(x.comments)} |`);
       }
     }
     lines.push('');
   }
   if (r.changesSinceEarlierReports.length) {
     lines.push('## Wijzigingen bij eerder gemelde open orders');
-    for (const x of r.changesSinceEarlierReports) lines.push(`- ${x.orderid} (${x.reference ?? '-'}): ${x.previousStatus} → ${x.status}. ${x.reason}`);
+    for (const x of r.changesSinceEarlierReports) lines.push(`- ${x.orderid} (${x.reference ?? '-'}): ${x.previousStatus} → ${x.status}. ${x.reason}${x.comments?.length ? ` Comment: ${formatComments(x.comments)}` : ''}`);
     lines.push('');
   }
   if (r.stillOpenFromEarlierReports.length) {
     lines.push('## Eerder gemeld en nog steeds open');
-    for (const x of r.stillOpenFromEarlierReports) lines.push(`- ${x.orderid} (${x.reference ?? '-'}): deadline ${x.deadline}, ${x.measuredOrStatus}.`);
+    for (const x of r.stillOpenFromEarlierReports) lines.push(`- ${x.orderid} (${x.reference ?? '-'}): deadline ${x.deadline}, ${x.measuredOrStatus}.${x.comments?.length ? ` Comment: ${formatComments(x.comments)}` : ''}`);
     lines.push('');
   }
   if (r.missingData.length) {
@@ -275,6 +296,17 @@ export function renderMarkdown(result) {
     for (const m of r.missingData) lines.push(`- ${m}`);
   }
   return lines.join('\n');
+}
+
+/** Comments als één tabelcel: "tekst (geplaatst dd-mm hh:mm)", gescheiden door " / ". */
+export function formatComments(comments) {
+  if (!comments) return '';
+  if (!comments.length) return '-';
+  return comments.map((c) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(c.created ?? '');
+    const when = m ? ` (geplaatst ${m[3]}-${m[2]} ${m[4]}:${m[5]})` : '';
+    return `${c.body.replace(/\|/g, '/')}${when}`;
+  }).join(' / ');
 }
 
 /** Voer fn uit over items met maximaal `limit` tegelijk; behoudt de volgorde van de resultaten. */

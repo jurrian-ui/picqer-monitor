@@ -23,7 +23,7 @@ export const TOOLS = [
   },
   {
     name: 'inspect_order',
-    description: 'Toon voor één order (Picqer-ordernummer of referentie) de gebruikte tijdstempels, de berekende deadline, de uitkomst en de zendingen (vervoerder, trackingcode). Bedoeld om tijdstempels te valideren met een bekende voorbeeldorder.',
+    description: 'Toon voor één order (Picqer-ordernummer of referentie) de gebruikte tijdstempels, de berekende deadline, de uitkomst, de comments uit Picqer en de zendingen (vervoerder, trackingcode). Bedoeld om tijdstempels te valideren met een bekende voorbeeldorder.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -82,7 +82,9 @@ export async function callTool(name, args, deps) {
         const evaluation = evaluateOrder(o, { config, calendar, now, backorder: { open, seenBefore: Boolean(state.backorderSeen[String(o.idorder)]) && !open } });
         const shipments = [];
         for (const p of o.picklists.slice(0, 5)) shipments.push(...await client.getPicklistShipments(p.idpicklist));
-        out.push({ rawTimestamps: { order_created: o.created, order_updated: o.updated, picklists: o.picklists }, evaluation, shipments });
+        let comments;
+        try { comments = await client.getOrderComments(o.idorder); } catch (e) { comments = `Niet opgehaald: ${e.message}`; }
+        out.push({ rawTimestamps: { order_created: o.created, order_updated: o.updated, picklists: o.picklists }, evaluation, comments, shipments });
       }
       return text(out);
     }
