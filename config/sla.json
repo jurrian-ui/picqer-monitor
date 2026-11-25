@@ -87,5 +87,7 @@
   "deadlineDayOffset": 1,
   "shipmentTimeBudgetSeconds": 35,
   "maxCommentFetchesPerRun": 200,
-  "commentTimeBudgetSeconds": 30
+  "commentTimeBudgetSeconds": 30,
+  "maxOpenListOrders": 300,
+  "openListTimeBudgetSeconds": 45
 }

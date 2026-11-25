@@ -55,15 +55,22 @@ export function minimizeShipment(s) {
   };
 }
 
-/** Houd van een comment alleen de tekst en het tijdstip over (geen auteur). */
-export function minimizeComment(c) {
+/** Maak van een Picqer-comment een minimaal object. De auteur alleen als daarom gevraagd wordt. */
+export function minimizeComment(c, { withAuthor = false } = {}) {
   const body = String(c.body ?? '')
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
-  return { body: body.length > 300 ? body.slice(0, 297) + '...' : body, created: c.created ?? null };
+  const out = {
+    idcomment: c.idcomment ?? null,
+    source_type: c.source_type ?? null,
+    body: body.length > 300 ? body.slice(0, 297) + '...' : body,
+    created: c.created_at ?? c.created ?? null,
+  };
+  if (withAuthor) out.author = c.author?.full_name ?? c.author?.name ?? c.author?.username ?? null;
+  return out;
 }
 
 export class PicqerClient {
@@ -157,13 +164,32 @@ export class PicqerClient {
     throw new PicqerError('Te veel backorders om op te halen.', { path: '/backorders' });
   }
 
-  /** Comments bij een order (alleen tekst en tijdstip), oudste eerst. */
-  async getOrderComments(idorder) {
-    const rows = await this.get(`/orders/${encodeURIComponent(idorder)}/comments`);
-    return (Array.isArray(rows) ? rows : [])
-      .map(minimizeComment)
+  /** Alle pagina's van een comments-lijst (offset-paginering, 100 per pagina). */
+  async listComments(path, { withAuthor = false, pageSize = 100, maxPages = 10 } = {}) {
+    const all = [];
+    for (let page = 0; page < maxPages; page++) {
+      const rows = await this.get(path, page ? { offset: page * pageSize } : {});
+      if (!Array.isArray(rows)) throw new PicqerError(`Onverwacht antwoord op GET ${path}.`, { path });
+      all.push(...rows.map((c) => minimizeComment(c, { withAuthor })));
+      if (rows.length < pageSize) break;
+    }
+    return all
       .filter((c) => c.body)
       .sort((a, b) => String(a.created ?? '').localeCompare(String(b.created ?? '')));
+  }
+
+  /** Comments die op de order zelf zijn geplaatst. */
+  async getOrderComments(idorder, opts) {
+    return this.listComments(`/orders/${encodeURIComponent(idorder)}/comments`, opts);
+  }
+
+  /**
+   * Comments die op de picklijst zelf zijn geplaatst. Picqer toont order-comments standaard
+   * ook bij de picklijst; die laten we hier weg (ze komen al via de order).
+   */
+  async getPicklistComments(idpicklist, opts) {
+    const rows = await this.listComments(`/picklists/${encodeURIComponent(idpicklist)}/comments`, opts);
+    return rows.filter((c) => c.source_type == null || c.source_type === 'picklist');
   }
 
   async getPicklistShipments(idpicklist) {

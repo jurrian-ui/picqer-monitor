@@ -18,7 +18,7 @@ test('initialize en tools/list', async () => {
   const notif = await post(`/mcp/${TOKEN}`, { jsonrpc: '2.0', method: 'notifications/initialized' });
   assert.equal(notif.status, 202);
   const list = await (await post(`/mcp/${TOKEN}`, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).json();
-  assert.deepEqual(list.result.tools.map((t) => t.name).sort(), ['get_monitor_status', 'inspect_order', 'run_cutoff_check', 'sample_orders']);
+  assert.deepEqual(list.result.tools.map((t) => t.name).sort(), ['get_monitor_status', 'inspect_order', 'list_open_without_comments', 'run_cutoff_check', 'sample_orders']);
 });
 
 test('get_monitor_status werkt zonder Picqer-verzoek', async () => {

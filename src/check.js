@@ -2,6 +2,8 @@
 import { evaluateOrder, STATUS, ALL_STATUSES, DENOMINATOR_STATUSES } from './sla.js';
 import { formatPicqerDateTime, formatLocal, parsePicqerDateTime } from './time.js';
 import { WorkCalendar } from './calendar.js';
+import { mapLimit } from './util.js';
+import { attachComments, formatComments } from './comments.js';
 
 const STATE_KEY = 'state:v1';
 const GROUPS = ['NL', 'BE', 'OVERIG', 'ONBEKEND'];
@@ -96,24 +98,17 @@ export async function runCheck({ client, store, config, closingDays, now, from, 
       }
     }
 
-    // Comments uit Picqer bij te late en open orders (mogelijke geldige reden). Alleen tonen; de status verandert niet.
-    // Een fout hierbij laat de controle niet mislukken.
-    const needComments = [...inPeriod, ...changes, ...stillOpen].filter((r) => r.status === STATUS.LATE || r.status === STATUS.OPEN_OVERDUE);
-    const commentCap = config.maxCommentFetchesPerRun ?? 200;
-    const commentErrors = [];
-    const commentsSkipped = [];
-    await mapLimit(needComments, 5, async (r, i) => {
-      if (i >= commentCap || Date.now() > startedAt + (config.commentTimeBudgetSeconds ?? 30) * 1000) {
-        commentsSkipped.push(r.orderid ?? r.idorder);
-        r.comments = null;
-        return;
-      }
-      try {
-        r.comments = await client.getOrderComments(r.idorder);
-      } catch (e) {
-        r.comments = null;
-        commentErrors.push(`${r.orderid ?? r.idorder}: ${e.message}`);
-      }
+    // Comments uit Picqer (order en picklijsten) als mogelijke geldige reden. Alleen tonen; de status verandert niet.
+    // Voor orders die open staan na de deadline altijd; voor te laat verwerkte orders zolang de grens het toelaat.
+    // Een fout hierbij laat de controle niet mislukken; de order krijgt dan "(niet opgehaald)".
+    const all = [...inPeriod, ...changes, ...stillOpen];
+    const { errors: commentErrors, skipped: commentsSkipped } = await attachComments({
+      client,
+      orders: byId,
+      always: all.filter((r) => r.status === STATUS.OPEN_OVERDUE),
+      optional: all.filter((r) => r.status === STATUS.LATE),
+      cap: config.maxCommentFetchesPerRun ?? 200,
+      deadlineMs: startedAt + (config.commentTimeBudgetSeconds ?? 30) * 1000,
     });
 
     // Koppeling order - zending - vervoerder - trackingcode (voorbereiding vervoerdersperformance).
@@ -241,7 +236,7 @@ export function buildReport({ config, closingDays, tz, now, periodStart, lastSuc
   if (config.picqerTimezone && !config.picqerTimezone.confirmed) missingData.push(`Tijdzone van Picqer-tijden aangenomen als ${config.picqerTimezone.value} (onbevestigd).`);
   if (missingShipments.length) missingData.push(`Zendinggegevens (vervoerder/tracking) nog niet opgehaald voor ${missingShipments.length} order(s); die volgen in een volgende run.`);
   if (commentErrors.length) missingData.push(`Comments uit Picqer konden niet worden opgehaald (${commentErrors.length}x): ${commentErrors.slice(0, 5).join('; ')}.`);
-  if (commentsSkipped.length) missingData.push(`Comments niet opgehaald voor ${commentsSkipped.length} order(s) (tijd- of aantalgrens bereikt).`);
+  if (commentsSkipped.length) missingData.push(`Comments niet opgehaald voor ${commentsSkipped.length} te laat verwerkte order(s) (tijd- of aantalgrens bereikt). Bij orders die nog open staan worden comments altijd opgehaald.`);
   if (shipmentErrors.length) missingData.push(`Fout bij ophalen zendinggegevens (${shipmentErrors.length}x), blijft in de wachtrij: ${shipmentErrors.slice(0, 5).join('; ')}.`);
 
   return {
@@ -285,12 +280,12 @@ export function renderMarkdown(result) {
   }
   if (r.changesSinceEarlierReports.length) {
     lines.push('## Wijzigingen bij eerder gemelde open orders');
-    for (const x of r.changesSinceEarlierReports) lines.push(`- ${x.orderid} (${x.reference ?? '-'}): ${x.previousStatus} → ${x.status}. ${x.reason}${x.comments?.length ? ` Comment: ${formatComments(x.comments)}` : ''}`);
+    for (const x of r.changesSinceEarlierReports) lines.push(`- ${x.orderid} (${x.reference ?? '-'}): ${x.previousStatus} → ${x.status}. ${x.reason}${x.comments === null || x.comments?.length ? ` Comment: ${formatComments(x.comments)}` : ''}`);
     lines.push('');
   }
   if (r.stillOpenFromEarlierReports.length) {
     lines.push('## Eerder gemeld en nog steeds open');
-    for (const x of r.stillOpenFromEarlierReports) lines.push(`- ${x.orderid} (${x.reference ?? '-'}): deadline ${x.deadline}, ${x.measuredOrStatus}.${x.comments?.length ? ` Comment: ${formatComments(x.comments)}` : ''}`);
+    for (const x of r.stillOpenFromEarlierReports) lines.push(`- ${x.orderid} (${x.reference ?? '-'}): deadline ${x.deadline}, ${x.measuredOrStatus}.${x.comments === null || x.comments?.length ? ` Comment: ${formatComments(x.comments)}` : ''}`);
     lines.push('');
   }
   if (r.missingData.length) {
@@ -300,28 +295,4 @@ export function renderMarkdown(result) {
   return lines.join('\n');
 }
 
-/** Comments als één tabelcel: "tekst (geplaatst dd-mm hh:mm)", gescheiden door " / ". */
-export function formatComments(comments) {
-  if (comments === undefined) return '';
-  if (comments === null) return '(niet opgehaald)';
-  if (!comments.length) return '-';
-  return comments.map((c) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(c.created ?? '');
-    const when = m ? ` (geplaatst ${m[3]}-${m[2]} ${m[4]}:${m[5]})` : '';
-    return `${c.body.replace(/\|/g, '/')}${when}`;
-  }).join(' / ');
-}
-
-/** Voer fn uit over items met maximaal `limit` tegelijk; behoudt de volgorde van de resultaten. */
-export async function mapLimit(items, limit, fn) {
-  const results = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i], i);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
+export { mapLimit } from './util.js';

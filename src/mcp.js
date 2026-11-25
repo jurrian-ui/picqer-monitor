@@ -3,6 +3,7 @@ import { runCheck, renderMarkdown, loadState } from './check.js';
 import { evaluateOrder } from './sla.js';
 import { WorkCalendar } from './calendar.js';
 import { formatPicqerDateTime } from './time.js';
+import { listOpenWithoutComments, renderOpenList } from './openlist.js';
 
 const SUPPORTED_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
@@ -23,7 +24,7 @@ export const TOOLS = [
   },
   {
     name: 'inspect_order',
-    description: 'Toon voor één order (Picqer-ordernummer of referentie) de gebruikte tijdstempels, de berekende deadline, de uitkomst, de comments uit Picqer en de zendingen (vervoerder, trackingcode). Bedoeld om tijdstempels te valideren met een bekende voorbeeldorder.',
+    description: 'Toon voor één order (Picqer-ordernummer of referentie) de gebruikte tijdstempels, de berekende deadline, de uitkomst, de comments uit Picqer (order en per picklijst, met auteur) en de zendingen (vervoerder, trackingcode). Bedoeld om tijdstempels te valideren met een bekende voorbeeldorder.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -33,6 +34,19 @@ export const TOOLS = [
       additionalProperties: false,
     },
     annotations: { title: 'Order bekijken', readOnlyHint: true, openWorldHint: true },
+  },
+  {
+    name: 'list_open_without_comments',
+    description: 'Lijst van orders die nog open staan na de deadline, niet in backorder zijn, en geen comment hebben op de order of op een (niet-geannuleerde) picklijst. Gesorteerd op deadline, oudste eerst, met vlaggen voor gepauzeerde picklijsten en picklijsten die >24 uur na de order zijn aangemaakt. Alleen-lezen; wijzigt niets en verschuift het controletijdstip niet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Deadlines vanaf (ISO 8601, bijv. 2026-11-23T00:00:00+01:00). Standaard: 7 dagen geleden.' },
+        to: { type: 'string', description: 'Deadlines tot en met (ISO 8601). Standaard: nu.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'Open orders zonder comment', readOnlyHint: true, openWorldHint: true },
   },
   {
     name: 'sample_orders',
@@ -82,11 +96,21 @@ export async function callTool(name, args, deps) {
         const evaluation = evaluateOrder(o, { config, calendar, now, backorder: { open, seenBefore: Boolean(state.backorderSeen[String(o.idorder)]) && !open } });
         const shipments = [];
         for (const p of o.picklists.slice(0, 5)) shipments.push(...await client.getPicklistShipments(p.idpicklist));
-        let comments;
-        try { comments = await client.getOrderComments(o.idorder); } catch (e) { comments = `Niet opgehaald: ${e.message}`; }
-        out.push({ rawTimestamps: { order_created: o.created, order_updated: o.updated, picklists: o.picklists }, evaluation, comments, shipments });
+        let orderComments;
+        try { orderComments = await client.getOrderComments(o.idorder, { withAuthor: true }); } catch (e) { orderComments = `Niet opgehaald: ${e.message}`; }
+        const picklistComments = [];
+        for (const p of o.picklists.slice(0, 5)) {
+          let comments;
+          try { comments = await client.getPicklistComments(p.idpicklist, { withAuthor: true }); } catch (e) { comments = `Niet opgehaald: ${e.message}`; }
+          picklistComments.push({ picklistid: p.picklistid, status: p.status, created: p.created, comments });
+        }
+        out.push({ rawTimestamps: { order_created: o.created, order_updated: o.updated, picklists: o.picklists }, evaluation, orderComments, picklistComments, shipments });
       }
       return text(out);
+    }
+    case 'list_open_without_comments': {
+      const res = await listOpenWithoutComments({ client, config, closingDays, now, from: args.from, to: args.to });
+      return { ...text(renderOpenList(res, config.timezone)), isError: !res.ok };
     }
     case 'sample_orders': {
       const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
