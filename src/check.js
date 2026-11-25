@@ -99,17 +99,19 @@ export async function runCheck({ client, store, config, closingDays, now, from, 
     // Comments uit Picqer bij te late en open orders (mogelijke geldige reden). Alleen tonen; de status verandert niet.
     // Een fout hierbij laat de controle niet mislukken.
     const needComments = [...inPeriod, ...changes, ...stillOpen].filter((r) => r.status === STATUS.LATE || r.status === STATUS.OPEN_OVERDUE);
-    const commentCap = config.maxCommentFetchesPerRun ?? 100;
+    const commentCap = config.maxCommentFetchesPerRun ?? 200;
     const commentErrors = [];
     const commentsSkipped = [];
     await mapLimit(needComments, 5, async (r, i) => {
-      if (i >= commentCap || Date.now() > startedAt + (config.commentTimeBudgetSeconds ?? 15) * 1000) {
+      if (i >= commentCap || Date.now() > startedAt + (config.commentTimeBudgetSeconds ?? 30) * 1000) {
         commentsSkipped.push(r.orderid ?? r.idorder);
+        r.comments = null;
         return;
       }
       try {
         r.comments = await client.getOrderComments(r.idorder);
       } catch (e) {
+        r.comments = null;
         commentErrors.push(`${r.orderid ?? r.idorder}: ${e.message}`);
       }
     });
@@ -211,7 +213,7 @@ function deviation(r) {
     measuredOrStatus: r.measured ? `${r.measured} (geregistreerd in Picqer)` : `Picqer-status: ${r.picqerStatus}`,
     status: r.status, reason: r.reason, rule: r.rule ?? null,
     ...(r.previousStatus ? { previousStatus: r.previousStatus } : {}),
-    ...(r.comments ? { comments: r.comments } : {}),
+    ...(r.comments !== undefined ? { comments: r.comments } : {}),
   };
 }
 
@@ -300,7 +302,8 @@ export function renderMarkdown(result) {
 
 /** Comments als één tabelcel: "tekst (geplaatst dd-mm hh:mm)", gescheiden door " / ". */
 export function formatComments(comments) {
-  if (!comments) return '';
+  if (comments === undefined) return '';
+  if (comments === null) return '(niet opgehaald)';
   if (!comments.length) return '-';
   return comments.map((c) => {
     const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(c.created ?? '');

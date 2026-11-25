@@ -177,5 +177,6 @@ test('fout bij comments laat de controle niet mislukken', async () => {
   const r = await runCheck({ ...base, client, store, now: ams('2026-12-01 09:00:00') });
   assert.equal(r.ok, true);
   assert.ok(r.report.missingData.some((m) => /Comments uit Picqer konden niet/.test(m)));
+  assert.match(renderMarkdown(r), /\(niet opgehaald\)/);
   assert.equal((await loadState(store)).lastSuccessfulCheck, ams('2026-12-01 09:00:00').toISOString());
 });
