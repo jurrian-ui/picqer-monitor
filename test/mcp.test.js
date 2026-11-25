@@ -50,3 +50,9 @@ test('Picqer-client: herhaalt bij 429 en geeft fout bij blijvende 500', async ()
   const c2 = new PicqerClient({ baseUrl: 'https://e/api/v1', apiKey: 'K', userAgent: 'UA', sleep: async () => {}, fetch: async () => new Response('', { status: 500 }) });
   await assert.rejects(c2.get('/orders'), /HTTP 500/);
 });
+
+test('tracking-URL zonder postcode', async () => {
+  const { stripTrackingUrl } = await import('../src/picqer.js');
+  assert.equal(stripTrackingUrl('https://www.dhlparcel.nl/nl/volg-uw-zending-0?tt=JV123&pc=1234%20AB&lc=NL'), 'https://www.dhlparcel.nl/nl/volg-uw-zending-0?tt=JV123');
+  assert.equal(stripTrackingUrl(null), null);
+});
