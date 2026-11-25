@@ -14,6 +14,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         dry_run: { type: 'boolean', description: 'true = proefrun zonder opslaan (standaard). false = definitieve run.' },
+        include_json: { type: 'boolean', description: 'true = ook alle gegevens als JSON meesturen (groot). Standaard alleen het leesbare rapport.' },
         from: { type: 'string', description: 'Optioneel startmoment (ISO 8601, bijv. 2026-12-01T00:00:00+01:00). Alleen nodig bij de eerste run of om een periode opnieuw te beoordelen.' },
       },
       additionalProperties: false,
@@ -66,7 +67,8 @@ export async function callTool(name, args, deps) {
   switch (name) {
     case 'run_cutoff_check': {
       const result = await runCheck({ client, store, config, closingDays, now, from: args.from, dryRun: args.dry_run !== false });
-      return { ...text(renderMarkdown(result) + '\n\n---\nVolledige gegevens (JSON):\n' + JSON.stringify(result, null, 2)), isError: !result.ok };
+      const body = renderMarkdown(result) + (args.include_json ? '\n\n---\nVolledige gegevens (JSON):\n' + JSON.stringify(result, null, 2) : '');
+      return { ...text(body), isError: !result.ok };
     }
     case 'inspect_order': {
       if (!args.orderid && !args.reference) return { ...text('Geef orderid of reference op.'), isError: true };
