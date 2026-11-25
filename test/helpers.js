@@ -21,8 +21,8 @@ export class MemoryStore {
 
 /** Nep-Picqer-client met vaste gegevens. */
 export class FakeClient {
-  constructor({ orders = [], backorders = [], shipments = {}, comments = {}, failOn = null } = {}) {
-    this.comments = comments;
+  constructor({ orders = [], backorders = [], shipments = {}, comments = {}, picklistComments = {}, failOn = null } = {}) {
+    this.comments = comments; this.picklistComments = picklistComments;
     this.orders = orders; this.backorders = backorders; this.shipments = shipments; this.failOn = failOn;
     this.requestCount = 0;
   }
@@ -30,5 +30,6 @@ export class FakeClient {
   async listOrdersSince() { this.requestCount++; if (this.failOn === 'orders') throw new Error('HTTP 503 bij /orders'); return this.orders; }
   async getOrder(id) { this.requestCount++; return this.orders.find((o) => String(o.idorder) === String(id)); }
   async getOrderComments(id) { this.requestCount++; if (this.failOn === 'comments') throw new Error('HTTP 404'); return this.comments[id] ?? []; }
+  async getPicklistComments(id) { this.requestCount++; if (this.failOn === 'picklistComments') throw new Error('HTTP 500'); return this.picklistComments[id] ?? []; }
   async getPicklistShipments(id) { this.requestCount++; if (this.failOn === 'shipments') throw new Error('HTTP 500'); return this.shipments[id] ?? []; }
 }

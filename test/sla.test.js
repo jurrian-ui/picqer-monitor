@@ -142,6 +142,7 @@ test('marge tot 00:59:59 in de nacht na de werkdag', () => {
 
 test('minimizeComment: alleen tekst en tijdstip, HTML weg', async () => {
   const { minimizeComment } = await import('../src/picqer.js');
-  const c = minimizeComment({ idcomment: 1, author: { full_name: 'Piet' }, body: '<p>Huisnummer&nbsp;mist<br>bel klant</p>', created: '2026-11-30 21:40:12' });
-  assert.deepEqual(c, { body: 'Huisnummer mist bel klant', created: '2026-11-30 21:40:12' });
+  const raw = { idcomment: 1, source_type: 'order', author: { full_name: 'Piet' }, body: '<p>Huisnummer&nbsp;mist<br>bel klant</p>', created_at: '2026-11-30 21:40:12' };
+  assert.deepEqual(minimizeComment(raw), { idcomment: 1, source_type: 'order', body: 'Huisnummer mist bel klant', created: '2026-11-30 21:40:12' });
+  assert.equal(minimizeComment(raw, { withAuthor: true }).author, 'Piet');
 });
